@@ -52,6 +52,12 @@ def decide(
 
 
 @mcp.tool()
+def xchecks(run_id: int, tolerance: float = 0.05, db_path: str = "") -> dict:
+    """Scope-vs-DWT cycle cross-check per (cell, region), re-screened at tolerance."""
+    return api.xchecks(_db(db_path), run_id, tolerance)
+
+
+@mcp.tool()
 def query(sql: str, db_path: str = "") -> list[dict]:
     """Run a read-only SQL query against the store (writes are rejected)."""
     return api.sql(_db(db_path), sql)

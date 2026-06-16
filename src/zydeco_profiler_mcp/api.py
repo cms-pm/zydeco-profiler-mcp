@@ -12,6 +12,7 @@ from zydeco_profiler_mcp import db as _db
 from zydeco_profiler_mcp.analytics.decision import decide_run, decision_to_dict
 from zydeco_profiler_mcp.analytics.pareto import frontier_for_run
 from zydeco_profiler_mcp.duck import run_readonly_query
+from zydeco_profiler_mcp.ingest.cycles import CYCLES, CYCLES_DWT
 
 
 def list_runs(db_path: str | Path) -> list[dict]:
@@ -35,7 +36,7 @@ def cells_summary(db_path: str | Path, run_id: int) -> list[dict]:
             FROM measurements meas
             JOIN cells c   ON c.id = meas.cell_id
             JOIN metrics m ON m.id = meas.metric_id
-            WHERE meas.run_id = ?
+            WHERE c.run_id = ?
             GROUP BY c.name, c.is_baseline, m.name
             ORDER BY c.name, m.name
             """,
@@ -73,6 +74,69 @@ def decide(
         return decision_to_dict(decision)
     finally:
         conn.close()
+
+
+def xchecks(db_path: str | Path, run_id: int, tolerance: float = 0.05) -> dict:
+    """Scope-vs-DWT corroboration per (cell, region) for a cycle run.
+
+    Reads back the stored ``cycles`` (scope) and ``cycles_dwt`` medians and
+    **computes** the relative error on read, then re-screens each region against
+    ``tolerance`` at query time (so an analyst can tighten/loosen the threshold
+    without re-ingesting). The rel-error is never stored -- it is derived from
+    the two medians here, which is why it can never go stale. Regions with no
+    DWT counterpart report a null rel_error and are not flagged.
+    """
+    conn = _db.connect(db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT c.name AS cell, r.name AS region, m.name AS metric,
+                   meas.value AS value
+            FROM measurements meas
+            JOIN cells c   ON c.id = meas.cell_id
+            JOIN regions r ON r.id = meas.region_id
+            JOIN metrics m ON m.id = meas.metric_id
+            WHERE c.run_id = ? AND m.name IN (?, ?)
+            ORDER BY c.name, r.name
+            """,
+            (run_id, CYCLES, CYCLES_DWT),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    by_key: dict[tuple[str, str], dict[str, float]] = {}
+    for row in rows:
+        by_key.setdefault((row["cell"], row["region"]), {})[row["metric"]] = row["value"]
+
+    results: list[dict] = []
+    out_of_tolerance: list[dict] = []
+    for (cell, region), metrics in by_key.items():
+        scope_p50 = metrics.get(CYCLES)
+        dwt_p50 = metrics.get(CYCLES_DWT)
+        if dwt_p50 is not None and dwt_p50 != 0.0 and scope_p50 is not None:
+            rel_error: float | None = abs(scope_p50 - dwt_p50) / dwt_p50
+            within: bool | None = rel_error <= tolerance
+        else:
+            rel_error = None
+            within = None
+        entry = {
+            "cell": cell,
+            "region": region,
+            "scope_p50": scope_p50,
+            "dwt_p50": dwt_p50,
+            "rel_error": rel_error,
+            "within_tolerance": within,
+        }
+        results.append(entry)
+        if within is False:
+            out_of_tolerance.append(entry)
+
+    return {
+        "run_id": run_id,
+        "tolerance": tolerance,
+        "checks": results,
+        "out_of_tolerance": out_of_tolerance,
+    }
 
 
 def sql(db_path: str | Path, query: str) -> list[dict]:

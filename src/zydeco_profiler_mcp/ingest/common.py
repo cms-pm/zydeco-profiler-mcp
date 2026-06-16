@@ -20,6 +20,7 @@ _PROVENANCE_COLS = (
     "probe_serial",
     "scope_device",
     "bracket_overhead_cycles",
+    "dwt_bracket_overhead_cycles",
 )
 
 
@@ -96,7 +97,6 @@ def get_or_create_metric(
 def upsert_measurement(
     conn: sqlite3.Connection,
     *,
-    run_id: int,
     cell_id: int,
     region_id: int,
     metric_id: int,
@@ -106,12 +106,13 @@ def upsert_measurement(
     p999: float | None = None,
     sample_count: int = 1,
 ) -> None:
+    # run_id is intentionally absent: it is reached via cell_id -> cells.run_id.
     conn.execute(
         "INSERT INTO measurements"
-        "(run_id, cell_id, region_id, metric_id, value, p50, p99, p999, sample_count) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(run_id, cell_id, region_id, metric_id) DO UPDATE SET "
+        "(cell_id, region_id, metric_id, value, p50, p99, p999, sample_count) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(cell_id, region_id, metric_id) DO UPDATE SET "
         "value=excluded.value, p50=excluded.p50, p99=excluded.p99, p999=excluded.p999, "
         "sample_count=excluded.sample_count",
-        (run_id, cell_id, region_id, metric_id, value, p50, p99, p999, sample_count),
+        (cell_id, region_id, metric_id, value, p50, p99, p999, sample_count),
     )
