@@ -28,6 +28,7 @@ pip install -e ".[dev]"
 ```bash
 zydeco-profiler-mcp init bench.db
 zydeco-profiler-mcp ingest-size bench.db size_report.json
+zydeco-profiler-mcp ingest-cycles bench.db cycle_report.json  # exit 1 if scope/DWT disagree
 zydeco-profiler-mcp runs bench.db
 zydeco-profiler-mcp pareto bench.db --run 1 --metrics flash_bytes,sram_bytes
 zydeco-profiler-mcp decide bench.db --run 1 \

@@ -3,6 +3,7 @@
 
     zydeco-profiler-mcp init <db>
     zydeco-profiler-mcp ingest-size <db> <report.json>
+    zydeco-profiler-mcp ingest-cycles <db> <report.json>
     zydeco-profiler-mcp runs <db>
     zydeco-profiler-mcp pareto <db> --run <id> --metrics flash_bytes,sram_bytes
     zydeco-profiler-mcp decide <db> --run <id> --baseline <cell> --candidate <cell> \
@@ -59,6 +60,30 @@ def _cmd_ingest_size(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ingest_cycles(args: argparse.Namespace) -> int:
+    from zydeco_profiler_mcp.ingest.cycles import ingest_cycle_report
+
+    report = json.loads(Path(args.report).read_text(encoding="utf-8"))
+    conn = _db.connect(args.db)
+    try:
+        _db.migrate(conn)
+        result = ingest_cycle_report(conn, report)
+    finally:
+        conn.close()
+    _print(
+        {
+            "db": str(args.db),
+            "ingested_rows": result.rows,
+            "xchecks": len(result.xchecks),
+            "out_of_tolerance": [
+                {"cell": x.cell, "region": x.region, "rel_error": x.rel_error}
+                for x in result.out_of_tolerance
+            ],
+        }
+    )
+    return 0 if not result.out_of_tolerance else 1
+
+
 def _cmd_runs(args: argparse.Namespace) -> int:
     _print(api.list_runs(args.db))
     return 0
@@ -96,6 +121,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ing.add_argument("db")
     p_ing.add_argument("report")
     p_ing.set_defaults(func=_cmd_ingest_size)
+
+    p_ingc = sub.add_parser("ingest-cycles", help="ingest an on-target cycle report")
+    p_ingc.add_argument("db")
+    p_ingc.add_argument("report")
+    p_ingc.set_defaults(func=_cmd_ingest_cycles)
 
     p_runs = sub.add_parser("runs", help="list runs")
     p_runs.add_argument("db")
