@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "zydeco-profiler-mcp": {
+      "command": "zydeco-profiler-mcp",
+      "args": ["serve"],
+      "env": {
+        "ZYDECO_PROFILER_DB": "${PWD}/bench.db"
+      }
+    }
+  }
+}

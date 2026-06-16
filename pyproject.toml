@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zydeco-profiler-mcp"
+version = "0.1.0.dev0"
+description = "Standalone, project-neutral benchmark-store MCP — ingests code-size and on-target cycle measurements into a provenance-bound store and exposes Pareto/CI analytics and a pre-registered multi-objective decision rule over a read-only MCP surface."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["mcp", "benchmark", "profiler", "embedded", "pareto", "zero-cost-abstraction", "wcet"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Embedded Systems",
+    "Typing :: Typed",
+]
+dependencies = [
+    "duckdb>=1.0",
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+zydeco-profiler-mcp = "zydeco_profiler_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cms-pm/zydeco-profiler-mcp"
+Source = "https://github.com/cms-pm/zydeco-profiler-mcp"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+zydeco_profiler_mcp = ["schema/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+
+[tool.ruff]
+line-length = 100
