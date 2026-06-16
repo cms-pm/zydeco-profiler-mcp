@@ -68,7 +68,6 @@ def ingest_size_report(conn: sqlite3.Connection, report: dict) -> CountReport:
             region_id = get_or_create_region(conn, meas["region"])
             upsert_measurement(
                 conn,
-                run_id=run_id,
                 cell_id=cell_id,
                 region_id=region_id,
                 metric_id=metric_ids[metric_name],

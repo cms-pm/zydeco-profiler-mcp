@@ -26,10 +26,11 @@ CREATE TABLE IF NOT EXISTS run_provenance (
   elf_sha256 TEXT,
   map_sha256 TEXT,
   size_sha256 TEXT,
-  board_id TEXT,                   -- HIL only
-  probe_serial TEXT,               -- HIL only
-  scope_device TEXT,               -- HIL only (WaveForms / Analog Discovery)
-  bracket_overhead_cycles REAL     -- HIL only (calibrated empty-bracket subtract)
+  board_id TEXT,                       -- HIL only
+  probe_serial TEXT,                   -- HIL only
+  scope_device TEXT,                   -- HIL only (WaveForms / Analog Discovery)
+  bracket_overhead_cycles REAL,        -- HIL only: scope bracket-pin empty-toggle subtract
+  dwt_bracket_overhead_cycles REAL     -- HIL only: DWT empty-bracket subtract (corroboration)
 );
 
 -- The regime under test within a run. For Zydeco: the 3-cell ladder
@@ -43,6 +44,10 @@ CREATE TABLE IF NOT EXISTS cells (
   is_baseline INTEGER NOT NULL DEFAULT 0,
   UNIQUE(run_id, name)
 );
+
+-- Integrity: at most one baseline cell per run (partial unique index).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_baseline_per_run
+  ON cells(run_id) WHERE is_baseline = 1;
 
 -- Measured code regions (deduplicated by name across runs).
 CREATE TABLE IF NOT EXISTS regions (
@@ -60,21 +65,25 @@ CREATE TABLE IF NOT EXISTS metrics (
   UNIQUE(name)
 );
 
--- Fact table: one row per (run, cell, region, metric) observation. Percentile
--- columns carry cycle distributions; size metrics use value only.
+-- Fact table: one row per (cell, region, metric) observation. The run is
+-- reached transitively via cell_id -> cells.run_id, so run_id is deliberately
+-- NOT stored here: cell_id alone determines it, and duplicating it would be a
+-- partial-key dependency (2NF violation) plus an update anomaly. Percentile
+-- columns carry cycle distributions; size metrics use value only. Derived
+-- quantities (e.g. the scope-vs-DWT relative error) are computed on read, never
+-- stored, so there is no value that can fall out of sync with its inputs.
 CREATE TABLE IF NOT EXISTS measurements (
   id INTEGER PRIMARY KEY,
-  run_id INTEGER NOT NULL REFERENCES runs(id),
   cell_id INTEGER NOT NULL REFERENCES cells(id),
   region_id INTEGER NOT NULL REFERENCES regions(id),
   metric_id INTEGER NOT NULL REFERENCES metrics(id),
-  value REAL NOT NULL,             -- representative value (mean or single)
+  value REAL NOT NULL,             -- representative value (mean, median, or single)
   p50 REAL,
   p99 REAL,
   p999 REAL,
   sample_count INTEGER NOT NULL DEFAULT 1,
-  UNIQUE(run_id, cell_id, region_id, metric_id)
+  UNIQUE(cell_id, region_id, metric_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_measurements_run ON measurements(run_id);
+CREATE INDEX IF NOT EXISTS idx_measurements_cell ON measurements(cell_id);
 CREATE INDEX IF NOT EXISTS idx_cells_run ON cells(run_id);

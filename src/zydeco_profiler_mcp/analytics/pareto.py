@@ -42,7 +42,7 @@ def cell_points(
         FROM measurements meas
         JOIN cells c   ON c.id = meas.cell_id
         JOIN metrics m ON m.id = meas.metric_id
-        WHERE meas.run_id = ? AND m.name IN ({placeholders})
+        WHERE c.run_id = ? AND m.name IN ({placeholders})
         GROUP BY c.name, c.is_baseline, m.name
         """,
         (run_id, *metric_names),

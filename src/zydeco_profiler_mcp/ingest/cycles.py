@@ -9,13 +9,16 @@ optionally, corroborating Brontes DWT cycle counts. This ingester:
   2. subtracts the calibrated empty-bracket overhead from every sample,
   3. records p50/p99/p999 + sample_count for the scope-derived ``cycles`` metric
      (the decision-bearing timing number, with ``value`` = p50) and the
-     corroborating ``cycles_dwt`` metric, and
-  4. computes the scope-vs-DWT cross-check (relative error of the medians) and
-     persists it as ``cycles_xcheck_rel_error`` for the audit trail.
+     corroborating ``cycles_dwt`` metric.
 
-The scope is the primary timing instrument; the DWT count is the cross-check.
-Brontes remains the sole flash/probe/ITM/SWO authority -- this ingester only
-consumes evidence it already produced.
+The scope-vs-DWT cross-check (relative error of the medians) is **derived data**:
+it is fully determined by the stored ``cycles`` and ``cycles_dwt`` values, so it
+is returned in the ingest result and recomputed by ``api.xchecks`` on read --
+never stored. Persisting it would duplicate a value that can fall out of sync
+with its inputs (a normalization/update anomaly). The scope is the primary
+timing instrument; the DWT count is the cross-check. Brontes remains the sole
+flash/probe/ITM/SWO authority -- this ingester only consumes evidence it
+already produced.
 
 Report shape (project-neutral)::
 
@@ -61,7 +64,6 @@ from zydeco_profiler_mcp.ingest.common import (
 
 CYCLES = "cycles"
 CYCLES_DWT = "cycles_dwt"
-CYCLES_XCHECK = "cycles_xcheck_rel_error"
 
 
 @dataclass(frozen=True)
@@ -111,20 +113,22 @@ def ingest_cycle_report(conn: sqlite3.Connection, report: dict) -> CycleIngestRe
 
     provenance = dict(report.get("provenance", {}))
     clock_hz = float(report.get("clock_hz") or 0.0)
+    report_scope_overhead = report.get("bracket_overhead_cycles")
     scope_overhead = float(
-        report.get("bracket_overhead_cycles")
-        if report.get("bracket_overhead_cycles") is not None
+        report_scope_overhead
+        if report_scope_overhead is not None
         else provenance.get("bracket_overhead_cycles", 0.0)
     )
     dwt_overhead = float(report.get("dwt_bracket_overhead_cycles", 0.0))
     tolerance = float(report.get("xcheck_tolerance", 0.05))
-    # The scope bracket overhead lives on the run row for provenance.
+    # Both calibrated overheads live on the run row so the subtraction is
+    # reproducible from the DB alone (audit trail).
     provenance.setdefault("bracket_overhead_cycles", scope_overhead)
+    provenance.setdefault("dwt_bracket_overhead_cycles", dwt_overhead)
     set_provenance(conn, run_id, provenance)
 
     cycles_id = get_or_create_metric(conn, CYCLES, unit="cycles", lower_is_better=True)
     dwt_id = get_or_create_metric(conn, CYCLES_DWT, unit="cycles", lower_is_better=True)
-    xcheck_id = get_or_create_metric(conn, CYCLES_XCHECK, unit="ratio", lower_is_better=True)
 
     rows = 0
     xchecks: list[XCheck] = []
@@ -148,7 +152,6 @@ def ingest_cycle_report(conn: sqlite3.Connection, report: dict) -> CycleIngestRe
                 )
             upsert_measurement(
                 conn,
-                run_id=run_id,
                 cell_id=cell_id,
                 region_id=region_id,
                 metric_id=cycles_id,
@@ -167,7 +170,6 @@ def ingest_cycle_report(conn: sqlite3.Connection, report: dict) -> CycleIngestRe
             if dwt_pct is not None:
                 upsert_measurement(
                     conn,
-                    run_id=run_id,
                     cell_id=cell_id,
                     region_id=region_id,
                     metric_id=dwt_id,
@@ -178,19 +180,11 @@ def ingest_cycle_report(conn: sqlite3.Connection, report: dict) -> CycleIngestRe
                     sample_count=len(dwt),
                 )
                 rows += 1
+                # Cross-check is derived from the two stored medians; computed
+                # here for the in-memory report, never persisted.
                 if dwt_pct["p50"] != 0.0:
                     rel_error = abs(scope_pct["p50"] - dwt_pct["p50"]) / dwt_pct["p50"]
                     within = rel_error <= tolerance
-                    upsert_measurement(
-                        conn,
-                        run_id=run_id,
-                        cell_id=cell_id,
-                        region_id=region_id,
-                        metric_id=xcheck_id,
-                        value=rel_error,
-                        sample_count=1,
-                    )
-                    rows += 1
 
             xchecks.append(
                 XCheck(

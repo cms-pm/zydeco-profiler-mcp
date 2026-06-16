@@ -50,8 +50,9 @@ def test_xchecks_passes_within_tolerance(db_path, cycle_report):
     assert result["out_of_tolerance"] == []
     assert len(result["checks"]) == 2
     c1 = next(c for c in result["checks"] if c["cell"] == "cell1_c_hal")
-    assert c1["scope_p50"] == 200.0
+    assert c1["scope_p50"] == pytest.approx(200.0)
     assert c1["dwt_p50"] == 201.0
+    assert c1["rel_error"] == pytest.approx(abs(200.0 - 201.0) / 201.0)
     assert c1["within_tolerance"] is True
 
 

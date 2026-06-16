@@ -27,29 +27,55 @@ def _measurement(conn, cell, region, metric):
 def test_scope_overhead_subtracted_and_percentiles(conn, cycle_report):
     ingest_cycle_report(conn, cycle_report)
 
-    # cell1 scope: [212,213,211,212,214] - 12 overhead -> median 200
+    # cell1 scope: [212,213,211,212,214] - 12 overhead -> median 200.
+    # Values round-trip through a seconds<->cycles conversion, so compare with
+    # approx rather than exact float equality.
     c1 = _measurement(conn, "cell1_c_hal", "uart_tx", "cycles")
-    assert c1["value"] == 200.0
-    assert c1["p50"] == 200.0
+    assert c1["value"] == pytest.approx(200.0)
+    assert c1["p50"] == pytest.approx(200.0)
     assert c1["n"] == 5
 
     # cell3 is faster: median 180
     c3 = _measurement(conn, "cell3_cpp_custom", "uart_tx", "cycles")
-    assert c3["value"] == 180.0
+    assert c3["value"] == pytest.approx(180.0)
 
 
-def test_dwt_recorded_and_xcheck_within_tolerance(conn, cycle_report):
+def test_dwt_recorded_and_xcheck_derived_not_stored(conn, cycle_report):
     result = ingest_cycle_report(conn, cycle_report)
 
     dwt = _measurement(conn, "cell1_c_hal", "uart_tx", "cycles_dwt")
-    assert dwt["value"] == 201.0  # no bracket subtract on dwt by default
+    assert dwt["value"] == 201.0  # raw ints, no bracket subtract on dwt by default
 
-    xrow = _measurement(conn, "cell1_c_hal", "uart_tx", "cycles_xcheck_rel_error")
-    assert xrow is not None
-    assert xrow["value"] == pytest.approx(abs(200.0 - 201.0) / 201.0)
+    # The cross-check is derived data: it must NOT be persisted as a measurement.
+    assert _measurement(conn, "cell1_c_hal", "uart_tx", "cycles_xcheck_rel_error") is None
+    metric_names = {
+        row["name"] for row in conn.execute("SELECT name FROM metrics").fetchall()
+    }
+    assert "cycles_xcheck_rel_error" not in metric_names
 
+    # ...but it is computed in the in-memory ingest report.
+    c1 = next(x for x in result.xchecks if x.cell == "cell1_c_hal")
+    assert c1.rel_error == pytest.approx(abs(200.0 - 201.0) / 201.0)
     assert result.out_of_tolerance == ()
     assert all(x.within_tolerance for x in result.xchecks)
+
+
+def test_dwt_bracket_overhead_persisted(conn, cycle_report):
+    report = copy.deepcopy(cycle_report)
+    report["dwt_bracket_overhead_cycles"] = 5.0
+    ingest_cycle_report(conn, report)
+
+    row = conn.execute(
+        "SELECT bracket_overhead_cycles AS scope, dwt_bracket_overhead_cycles AS dwt "
+        "FROM run_provenance JOIN runs ON runs.id = run_provenance.run_id "
+        "WHERE runs.label = ?",
+        (report["run"],),
+    ).fetchone()
+    assert row["scope"] == 12.0
+    assert row["dwt"] == 5.0
+    # The 5-cycle DWT subtract is reflected in the stored median (201 -> 196).
+    dwt = _measurement(conn, "cell1_c_hal", "uart_tx", "cycles_dwt")
+    assert dwt["value"] == 196.0
 
 
 def test_out_of_tolerance_flagged(conn, cycle_report):
