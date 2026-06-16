@@ -75,5 +75,62 @@ def decide(
         conn.close()
 
 
+def xchecks(db_path: str | Path, run_id: int, tolerance: float = 0.05) -> dict:
+    """Scope-vs-DWT corroboration per (cell, region) for a cycle run.
+
+    Reads back the stored ``cycles`` (scope), ``cycles_dwt``, and
+    ``cycles_xcheck_rel_error`` measurements and re-screens each region against
+    ``tolerance`` at query time (so an analyst can tighten/loosen the threshold
+    without re-ingesting). Regions with no DWT counterpart report a null
+    rel_error and are not flagged.
+    """
+    conn = _db.connect(db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT c.name AS cell, r.name AS region, m.name AS metric,
+                   meas.value AS value
+            FROM measurements meas
+            JOIN cells c   ON c.id = meas.cell_id
+            JOIN regions r ON r.id = meas.region_id
+            JOIN metrics m ON m.id = meas.metric_id
+            WHERE meas.run_id = ?
+              AND m.name IN ('cycles', 'cycles_dwt', 'cycles_xcheck_rel_error')
+            ORDER BY c.name, r.name
+            """,
+            (run_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    by_key: dict[tuple[str, str], dict[str, float]] = {}
+    for row in rows:
+        by_key.setdefault((row["cell"], row["region"]), {})[row["metric"]] = row["value"]
+
+    results: list[dict] = []
+    out_of_tolerance: list[dict] = []
+    for (cell, region), metrics in by_key.items():
+        rel_error = metrics.get("cycles_xcheck_rel_error")
+        within = None if rel_error is None else rel_error <= tolerance
+        entry = {
+            "cell": cell,
+            "region": region,
+            "scope_p50": metrics.get("cycles"),
+            "dwt_p50": metrics.get("cycles_dwt"),
+            "rel_error": rel_error,
+            "within_tolerance": within,
+        }
+        results.append(entry)
+        if within is False:
+            out_of_tolerance.append(entry)
+
+    return {
+        "run_id": run_id,
+        "tolerance": tolerance,
+        "checks": results,
+        "out_of_tolerance": out_of_tolerance,
+    }
+
+
 def sql(db_path: str | Path, query: str) -> list[dict]:
     return run_readonly_query(db_path, query)

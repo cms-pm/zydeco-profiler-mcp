@@ -8,6 +8,7 @@
     zydeco-profiler-mcp pareto <db> --run <id> --metrics flash_bytes,sram_bytes
     zydeco-profiler-mcp decide <db> --run <id> --baseline <cell> --candidate <cell> \
         --margins flash_bytes=0.02,sram_bytes=0.02,cycles=0.05
+    zydeco-profiler-mcp xchecks <db> --run <id> [--tolerance 0.05]
     zydeco-profiler-mcp serve            # read-only MCP server over stdio
 """
 from __future__ import annotations
@@ -101,6 +102,12 @@ def _cmd_decide(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_xchecks(args: argparse.Namespace) -> int:
+    result = api.xchecks(args.db, args.run, args.tolerance)
+    _print(result)
+    return 0 if not result["out_of_tolerance"] else 1
+
+
 def _cmd_serve(_args: argparse.Namespace) -> int:
     from zydeco_profiler_mcp.mcp_server import run_stdio
 
@@ -144,6 +151,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_dec.add_argument("--candidate", required=True)
     p_dec.add_argument("--margins", required=True, help="metric=frac,... e.g. flash_bytes=0.02")
     p_dec.set_defaults(func=_cmd_decide)
+
+    p_xc = sub.add_parser("xchecks", help="scope-vs-DWT cycle cross-check for a run")
+    p_xc.add_argument("db")
+    p_xc.add_argument("--run", type=int, required=True)
+    p_xc.add_argument("--tolerance", type=float, default=0.05)
+    p_xc.set_defaults(func=_cmd_xchecks)
 
     p_serve = sub.add_parser("serve", help="run the read-only MCP server (stdio)")
     p_serve.set_defaults(func=_cmd_serve)

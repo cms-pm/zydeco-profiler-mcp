@@ -34,6 +34,7 @@ zydeco-profiler-mcp pareto bench.db --run 1 --metrics flash_bytes,sram_bytes
 zydeco-profiler-mcp decide bench.db --run 1 \
     --baseline cell1_c_hal --candidate cell3_cpp_custom \
     --margins flash_bytes=0.02,sram_bytes=0.02,cycles=0.05
+zydeco-profiler-mcp xchecks bench.db --run 1 --tolerance 0.05  # exit 1 if any region disagrees
 zydeco-profiler-mcp serve     # read-only MCP server over stdio
 ```
 
