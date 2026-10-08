@@ -1,5 +1,33 @@
 # zydeco-profiler-mcp
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![MCP: stdio](https://img.shields.io/badge/MCP-stdio%20%28read--only%29-7C3AED?style=flat-square)](#mcp)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-orange?style=flat-square)](pyproject.toml)
+
+**Settle "is version B actually better than A?" on embedded targets with
+evidence, not impressions.** zydeco-profiler-mcp stores code-size and
+on-target cycle measurements in a provenance-bound SQLite store, then answers
+Pareto and confidence-interval questions and applies a pre-registered
+decision rule, so the verdict can't be tuned after the numbers arrive. AI
+assistants query it over a read-only MCP surface; you feed it from your build
+and your probe.
+
+## Quickstart
+
+```bash
+git clone https://github.com/cms-pm/zydeco-profiler-mcp.git
+cd zydeco-profiler-mcp
+pip install -e .
+zydeco-profiler-mcp init bench.db
+zydeco-profiler-mcp ingest-size bench.db size_report.json
+zydeco-profiler-mcp pareto bench.db --run 1 --metrics flash_bytes,sram_bytes
+```
+
+Then point your MCP client at `zydeco-profiler-mcp serve` (see [MCP](#mcp)).
+
+## What it is
+
 A standalone, **project-neutral** benchmark-store MCP. It ingests code-size and
 on-target cycle measurements into a provenance-bound SQLite store and exposes
 **Pareto / CI analytics** plus a **pre-registered multi-objective decision rule**
